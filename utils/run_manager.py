@@ -73,7 +73,7 @@ class RunManager:
             num_classes=2
         ).to(self.device)
 
-        self.model = Diffusion(unet, data_scale=data_scale, vae=None)
+        self.model = Diffusion(unet, data_scale=data_scale, vae=vae)
 
         # get predictor
         self.predictor = build_predictor(config).to(self.device)
@@ -135,7 +135,6 @@ class RunManager:
 
     def save_checkpoint(self, is_best=False):
         checkpoint = {
-            'use_diffusion': self.config.use_diffusion,
             'model_epoch': self.model_epoch,
             'model_loss': self.model_loss,
             'model': self.model.state_dict(),
@@ -171,17 +170,16 @@ class RunManager:
         with open(model_path, 'rb') as f:
             checkpoint = torch.load(f, map_location='cpu')
 
-        if self.config.use_diffusion == checkpoint['use_diffusion']:
-            if checkpoint['model_epoch'] > 0:
-                self.model_epoch = checkpoint['model_epoch'] + 1
-                self.model_loss = checkpoint['model_loss']
-                self.model.load_state_dict(checkpoint['model'])
-                self.opt_model.load_state_dict(checkpoint['opt_model'])
-            if checkpoint['predictor_epoch'] > 0:
-                self.predictor_epoch = checkpoint['predictor_epoch'] + 1
-                self.predictor_loss = checkpoint['predictor_loss']
-                self.predictor.load_state_dict(checkpoint['predictor'])
-            self.logger.info('load checkpoint from %s' % model_path)
+        if checkpoint['model_epoch'] > 0:
+            self.model_epoch = checkpoint['model_epoch'] + 1
+            self.model_loss = checkpoint['model_loss']
+            self.model.load_state_dict(checkpoint['model'])
+            self.opt_model.load_state_dict(checkpoint['opt_model'])
+        if checkpoint['predictor_epoch'] > 0:
+            self.predictor_epoch = checkpoint['predictor_epoch'] + 1
+            self.predictor_loss = checkpoint['predictor_loss']
+            self.predictor.load_state_dict(checkpoint['predictor'])
+        self.logger.info('load checkpoint from %s' % model_path)
 
     @torch.no_grad()
     def validate_model(self, sample_num=1000):
@@ -207,8 +205,7 @@ class RunManager:
             arch_code = arch_code.unsqueeze(dim=1)
             loss, model_loss, recon_loss = self.model(arch_code, condition=x_cond)
 
-            _, *data_shape = arch_code.shape
-            x = torch.randn([sample_num] + data_shape).to(self.device)
+            x = torch.randn([sample_num, 1, 10]).to(self.device)
             arch_codes = self.model.p_sample(x, condition=gen_x_cond)
             arch_codes = arch_codes.reshape(sample_num, -1)
             correct_num = sum([int(satisfy_arch_constraint(arch_code)) for arch_code in arch_codes])
@@ -297,18 +294,11 @@ class RunManager:
 
         for idx, [arch_code, illegal_arch_code, runtime, energy, layer_code] in enumerate(self.val_dataloader):
             arch_code = arch_code.to(self.device).unsqueeze(dim=1)
-            if self.config.use_diffusion:
-                latent_code, noise = self.model.q_sample(arch_code)
-            else:
-                with torch.no_grad():
-                    mu, log_var = self.model.encode(arch_code)
-                    vq_loss, perplexity, latent_code = self.model.reparameterize(mu, log_var)
+            latent_code, noise = self.model.q_sample(arch_code)
             condition_code = layer_code.to(self.device)
             runtime = runtime.unsqueeze(dim=1).to(self.device)
             energy = energy.unsqueeze(dim=1).to(self.device)
 
-            # latent_code = arch_code
-            latent_code = torch.cat([mu, log_var], dim=1)
             l_pred, e_pred = self.predictor(latent_code, condition_code)
             l_loss = self.predictor_criterion(l_pred, runtime)
             e_loss = self.predictor_criterion(e_pred, energy)
@@ -346,18 +336,11 @@ class RunManager:
             for idx, [arch_code, illegal_arch_code, runtime, energy, layer_code] in enumerate(self.train_dataloader):
                 self.adjust_learning_rate(self.opt_predictor, self.predictor_epoch, idx)
                 arch_code = arch_code.to(self.device).unsqueeze(dim=1)
-                if self.config.use_diffusion:
-                    latent_code, noise = self.model.q_sample(arch_code)
-                else:
-                    with torch.no_grad():
-                        mu, log_var = self.model.encode(arch_code)
-                        vq_loss, perplexity, latent_code = self.model.reparameterize(mu, log_var)
+                latent_code, noise = self.model.q_sample(arch_code)
                 condition_code = layer_code.to(self.device)
                 runtime = runtime.unsqueeze(dim=1).to(self.device)
                 energy = energy.unsqueeze(dim=1).to(self.device)
 
-                # latent_code = arch_code
-                latent_code = torch.cat([mu, log_var], dim=1)
                 l_pred, e_pred = self.predictor(latent_code, condition_code)
                 l_loss = self.predictor_criterion(l_pred, runtime)
                 e_loss = self.predictor_criterion(e_pred, energy)

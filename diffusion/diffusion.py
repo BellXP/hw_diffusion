@@ -54,7 +54,7 @@ class Diffusion(nn.Module):
 
     def q_sample(self, x, t=None):
         if t is None:
-            t = self.sample_timesteps(x.size(0)).to(self.device)
+            t = torch.tensor([self.noise_steps - 1] * x.size(0)).long().to(self.device)
         x = torch.div(x, self.data_scale)
         x = self.vae_encode(x)
 
