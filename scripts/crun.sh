@@ -19,9 +19,9 @@ export CUDA_VISIBLE_DEVICES=3
 $PYTHON main.py \
 --exp-name $JOB_NAME \
 --output $output_dir \
---model-epochs 300 \
+--model-epochs 50 \
 --predictor-epochs 100 \
---train-batch-size 64 \
+--train-batch-size 256 \
 --val-batch-size 1024 \
 --use-checkpoint --use-condition --use-diffusion \
 2>&1 | tee $log_dir/${JOB_NAME}_${NOW}.log

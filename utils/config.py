@@ -19,13 +19,13 @@ _C.pred_loss = 'smoothl1' # mse, l1, smoothl1
 
 # Optimizer
 _C.opt_name = 'Adam' # SGD, Adam
-_C.base_lr = 1e-3
+_C.base_lr = 1e-2
 _C.min_lr = 0
 _C.weight_decay = 1e-7
 _C.momentum = 0.9
 _C.nesterov = True
 
-_C.print_freq = 1000
+_C.print_freq = 100
 _C.save_freq = 1
 _C.warmup_epochs = 5
 

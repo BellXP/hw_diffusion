@@ -152,7 +152,7 @@ class Predictor(nn.Module):
 
 
 def build_predictor(config):
-    predictor = Predictor(config.latent_dim * 2, config.condition_dim, config.pred_layer_dims, config.pred_act_func, config.pred_use_norm)
+    predictor = Predictor(10, config.condition_dim, config.pred_layer_dims, config.pred_act_func, config.pred_use_norm)
     predictor.init_model()
 
     return predictor

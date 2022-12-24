@@ -13,7 +13,7 @@ def beta_schedule(linear_start=0.00085, linear_end=0.0120, n_timestep=1000):
 
 
 class Diffusion(nn.Module):
-    def __init__(self, model, data_scale: list=[1], vae=None, loss_type='mse'):
+    def __init__(self, model, data_scale: list=[1], vae=None, vae_emb_channel=None, loss_type='mse'):
         super().__init__()
         self.noise_schedule = NoiseScheduleVP(betas=beta_schedule())
         self.model = model
@@ -22,6 +22,11 @@ class Diffusion(nn.Module):
         self.data_scale = torch.tensor(data_scale).to(self.device)
         self.noise_steps = self.noise_schedule.total_N
         self.loss_fn = self.prepare_loss_fn(loss_type=loss_type)
+
+        if vae_emb_channel is not None:
+            self.vae_emb = nn.Embedding(2, vae_emb_channel).to(self.device)
+        else:
+            self.vae_emb = None
 
     def prepare_loss_fn(self, loss_type):
         if loss_type == 'l1':
@@ -47,16 +52,21 @@ class Diffusion(nn.Module):
 
         return x, noise
     
-    def vae_encode(self, x):
+    def vae_encode(self, x, condition=None):
         if self.vae is None:
             return x
-        return self.vae.encode(x)
+        if condition is not None and self.vae_emb is not None:
+            condition = self.vae_emb(condition)
 
-    def q_sample(self, x, t=None):
+        return self.vae.encode(x, condition)
+
+    def q_sample(self, x, t=None, condition=None):
         if t is None:
             t = torch.tensor([self.noise_steps - 1] * x.size(0)).long().to(self.device)
         x = torch.div(x, self.data_scale)
-        x = self.vae_encode(x)
+        if condition is not None and self.vae_emb is not None:
+            condition = self.vae_emb(condition)
+        x = self.vae_encode(x, condition)
 
         return self.add_noise(x, t)
     
@@ -67,8 +77,11 @@ class Diffusion(nn.Module):
         if t is not None:
             t = t[0].item()
         x = dpm_solver.sample(x)
+
         if self.vae is not None:
-            x = self.vae.decode(x)
+            if condition is not None and self.vae_emb is not None:
+                condition = self.vae_emb(condition)
+            x = self.vae.decode(x, condition)
         x = torch.mul(x, self.data_scale)
 
         return x
@@ -76,7 +89,7 @@ class Diffusion(nn.Module):
     def forward(self, x, condition=None):
         x = torch.div(x, self.data_scale)
         x_ori = x.clone()
-        x = self.vae_encode(x)
+        x = self.vae_encode(x, condition)
         t = self.sample_timesteps(x.size(0)).to(self.device)
         x_t, noise = self.add_noise(x, t)
 

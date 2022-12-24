@@ -73,7 +73,7 @@ class RunManager:
             num_classes=2
         ).to(self.device)
 
-        self.model = Diffusion(unet, data_scale=data_scale, vae=vae)
+        self.model = Diffusion(unet, data_scale=data_scale, vae=vae, vae_emb_channel=12).to(self.device)
 
         # get predictor
         self.predictor = build_predictor(config).to(self.device)

@@ -318,7 +318,7 @@ def get_vae(config=None, embed_dim=4, scale_factor=0.18215):
             b_channel_mult=[1, 2, 4, 4],
             num_res_blocks=2,
             attn_resolutions=[],
-            emb_channels = None,
+            emb_channels=None,
             dropout=0.0,
             dims=2
         )
