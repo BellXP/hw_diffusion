@@ -23,7 +23,7 @@ class Diffusion(nn.Module):
         self.noise_steps = self.noise_schedule.total_N
         self.loss_fn = self.prepare_loss_fn(loss_type=loss_type)
 
-        if vae_emb_channel is not None:
+        if vae is not None and vae_emb_channel is not None:
             self.vae_emb = nn.Embedding(2, vae_emb_channel).to(self.device)
         else:
             self.vae_emb = None
@@ -59,6 +59,14 @@ class Diffusion(nn.Module):
             condition = self.vae_emb(condition)
 
         return self.vae.encode(x, condition)
+    
+    def vae_decode(self, x, condition=None):
+        if self.vae is None:
+            return x
+        if condition is not None and self.vae_emb is not None:
+            condition = self.vae_emb(condition)
+            
+        return self.vae.decode(x, condition)
 
     def q_sample(self, x, t=None, condition=None):
         if t is None:
@@ -73,20 +81,17 @@ class Diffusion(nn.Module):
     def p_sample(self, x, t=None, condition=None):
         model_fn = model_wrapper(self.model, self.noise_schedule, condition=condition)
         dpm_solver = DPM_Solver(model_fn, self.noise_schedule)
-
         if t is not None:
             t = t[0].item()
         x = dpm_solver.sample(x)
-
-        if self.vae is not None:
-            if condition is not None and self.vae_emb is not None:
-                condition = self.vae_emb(condition)
-            x = self.vae.decode(x, condition)
+        x = self.vae_decode(x, condition)
+        x = x.clamp(0, 1)
         x = torch.mul(x, self.data_scale)
+        x = torch.round(x)
 
         return x
 
-    def forward(self, x, condition=None):
+    def forward(self, x, condition=None, vae_recon=False):
         x = torch.div(x, self.data_scale)
         x_ori = x.clone()
         x = self.vae_encode(x, condition)
@@ -95,9 +100,12 @@ class Diffusion(nn.Module):
 
         model_out = self.model(x_t, t, condition)
         model_loss = self.loss_fn(model_out, noise)
-        x_recon = self.p_sample(x_t, t, condition)
-        x_recon = torch.div(x_recon, self.data_scale)
-        recon_loss = self.loss_fn(x_recon, x_ori)
-        loss = model_loss + recon_loss
 
-        return loss, model_loss, recon_loss
+        if vae_recon:
+            x_recon = self.vae_decode(x, condition)
+        else:
+            x_recon = self.p_sample(x_t, t, condition)
+            x_recon = torch.div(x_recon, self.data_scale)
+        recon_loss = self.loss_fn(x_recon, x_ori)
+
+        return model_loss, recon_loss

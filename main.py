@@ -27,6 +27,7 @@ def parse_option():
     parser.add_argument('--output', type=str)
     parser.add_argument('--use-checkpoint', action='store_true')
     parser.add_argument('--use-condition', action='store_true')
+    parser.add_argument('--use-vae', action='store_true')
     parser.add_argument('--perform-lcp', action='store_true')
     args, _ = parser.parse_known_args()
 
@@ -50,17 +51,8 @@ def main_worker(config):
     logger.info(config.dump())
 
     if config.perform_lcp:
-        model_names = ['mobilenet_v2', 'resnet101', 'vit_small_patch16_224']
-        prop_target = 'latency#energy' # latency, energy
-        arch_codes, layer_codes = manager.layer_lcp(model_names, prop_target)
-        # model_lcp_results = manager.model_lcp(model_names, prop_target)
-        # lcp_ckpt = {
-        #     'model_names': model_names,
-        #     'layer_lcp': [arch_codes, layer_codes],
-        #     'model_lcp': model_lcp_results
-        # }
-        # with open(os.path.join(config.out_dir, "lcp_ckpt.plt"), 'wb') as f:
-        #     pickle.dump(lcp_ckpt, f)
+        prop_target = 'latency' # latency, energy
+        arch_codes, layer_codes = manager.layer_lcp(target=prop_target)
     else:
         manager.train_model()
         # manager.train_predictor()

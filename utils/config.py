@@ -5,33 +5,29 @@ from yacs.config import CfgNode as CN
 
 _C = CN()
 
-# Data settings
+# data settings
 _C.data_root = '/nvme/xupeng/workplace/dataset/maestro_data/out-of-order_data'
 _C.num_worker = 4 # the number of data 
-_C.log_target = False
-_C.log_layercode = False
 
 # predictor
-_C.pred_layer_dims = [256, 128]
 _C.pred_act_func = 'swish'
 _C.pred_use_norm = True
 _C.pred_loss = 'smoothl1' # mse, l1, smoothl1
 
-# Optimizer
+# optimizer
 _C.opt_name = 'Adam' # SGD, Adam
-_C.base_lr = 1e-2
+_C.base_lr = 1e-2 # 1e-2 for predictor and 1e-3 for model
 _C.min_lr = 0
 _C.weight_decay = 1e-7
 _C.momentum = 0.9
 _C.nesterov = True
 
+# train settings
 _C.print_freq = 100
 _C.save_freq = 1
 _C.warmup_epochs = 5
 
-# Prop
-_C.model_defs_path = '/nvme/xupeng/workplace/lcp/data/model_defs_dict.pkl'
-_C.layer_defs_path = '/nvme/xupeng/workplace/lcp/data/layer_defs.npy'
+# prop settings
 _C.prop_epoch = 100
 _C.prop_step = 10
 _C.prop_lr = 1
@@ -68,6 +64,7 @@ def update_config(config, args):
     config.out_dir = os.path.join(args.output, args.exp_name)
     config.use_checkpoint = args.use_checkpoint
     config.use_condition = args.use_condition
+    config.use_vae = args.use_vae
     config.perform_lcp = args.perform_lcp
 
     if not os.path.isdir(config.out_dir):

@@ -90,14 +90,14 @@ class Attention(nn.Module):
 
 
 class Predictor(nn.Module):
-    def __init__(self, latent_dim, condition_dim, layer_dims: list, act_func='tanh', use_norm=False):
+    def __init__(self, latent_dim, condition_dim, act_func='tanh', use_norm=False):
         super(Predictor, self).__init__()
         self.act_func = build_activation(act_func, inplace=True)
         self.norm_func = nn.BatchNorm1d if use_norm else nn.Identity
         self.flatten = nn.Flatten()
 
         layer_dims = [256, 128]
-        self.in_func = nn.Sequential(
+        self.in_func_runtime = nn.Sequential(
             self.norm_func(latent_dim + condition_dim),
             nn.Linear(latent_dim + condition_dim, layer_dims[0], bias=True),
             self.norm_func(layer_dims[0]),
@@ -105,12 +105,14 @@ class Predictor(nn.Module):
             nn.Dropout(0.5),
         )
 
-        # self.encoder = nn.Sequential()
-        # for i in range(len(layer_dims) -1):
-        #     self.encoder.add_module(f'up_norm_{i}', self.norm_func(layer_dims[i]))
-        #     # self.encoder.add_module(f'up_attn_{i}', Attention(layer_dims[i], 1, layer_dims[i], layer_dims[i+1], act_func))
-        #     self.encoder.add_module(f'up_mlp_{i}', MLP(layer_dims[i] * 2, layer_dims[i], layer_dims[i+1], True, act_func))
-        #     self.encoder.add_module(f'up_act_{i}', self.act_func)
+        self.in_func_energy = nn.Sequential(
+            self.norm_func(latent_dim + condition_dim),
+            nn.Linear(latent_dim + condition_dim, layer_dims[0], bias=True),
+            self.norm_func(layer_dims[0]),
+            self.act_func,
+            nn.Dropout(0.5),
+        )
+
         self.out_runtime = nn.Sequential(
             nn.Linear(layer_dims[-2], layer_dims[-1]),
             nn.BatchNorm1d(layer_dims[-1]),
@@ -131,10 +133,8 @@ class Predictor(nn.Module):
         latent_code = self.flatten(latent_code)
         condition_code = self.flatten(condition_code)
         pred_input = torch.cat((latent_code, condition_code), dim=1)
-        x = self.in_func(pred_input)
-        # x = self.encoder(x)
-        r_pred = self.out_runtime(x)
-        e_pred = self.out_energy(x)
+        r_pred = self.out_runtime(self.in_func_runtime(pred_input))
+        e_pred = self.out_energy(self.in_func_energy(pred_input))
 
         return r_pred, e_pred
 
@@ -152,7 +152,7 @@ class Predictor(nn.Module):
 
 
 def build_predictor(config):
-    predictor = Predictor(10, config.condition_dim, config.pred_layer_dims, config.pred_act_func, config.pred_use_norm)
+    predictor = Predictor(40, 7, config.pred_act_func, config.pred_use_norm)
     predictor.init_model()
 
     return predictor

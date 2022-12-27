@@ -24,34 +24,34 @@ def test_vae():
         z_channels=4,
         resolution=20,
         double_z=True,
-        b_channel_mult=[1, 2],
-        num_res_blocks=2,
+        b_channel_mult=[2, 4],
+        num_res_blocks=4,
         attn_resolutions=[],
-        emb_channels = 12,
+        emb_channels=32,
         dropout=0.0,
         dims=1
     )
-    model = get_vae(vae_config, embed_dim=1)
+    model = get_vae(vae_config, embed_dim=4)
     data = torch.randn(1, 1, 20)
-    emb = torch.randn(1, 12)
+    emb = torch.randn(1, 32)
 
     print('test encode & decode')
     emb_data = model.encode(data, emb)
     recon_data = model.decode(emb_data, emb)
     
-    print(emb_data)
-    print(recon_data)
+    print(emb_data.shape)
+    print(recon_data.shape)
 
 
 def test_unet():
     model = UNetModel(
-        image_size=20,
-        in_channels=1,
-        out_channels=1,
+        image_size=10,
+        in_channels=4,
+        out_channels=4,
         model_channels=32,
         attention_resolutions=[],
         num_res_blocks=2,
-        channel_mult=[ 1, 2],
+        channel_mult=[1, 2],
         num_heads=1,
         use_spatial_transformer=False,
         transformer_depth=1,
@@ -61,12 +61,12 @@ def test_unet():
         num_classes=2,
         dims=1
     )
-    data = torch.randn(1, 1, 20)
+    data = torch.randn(1, 4, 10)
     emb = torch.ones(1).long()
     t = torch.ones(1)
     out = model(data, t, y=emb)
 
-    print(out)
+    print(out.shape)
 
 
 def test_diffusion():
@@ -121,6 +121,6 @@ def test_diffusion():
 
 
 if __name__ == "__main__":
-    # test_vae()
-    # test_unet()
-    test_diffusion()
+    test_vae()
+    test_unet()
+    # test_diffusion()
