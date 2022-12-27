@@ -170,10 +170,11 @@ class RunManager:
         self.opt_model.load_state_dict(checkpoint['opt_model'])
         msg = self.model.load_state_dict(checkpoint['model'], strict=False)
         self.logger.info(msg)
-        # self.predictor_epoch = checkpoint['predictor_epoch'] + 1
-        # self.predictor_loss = checkpoint['predictor_loss']
-        # self.opt_predictor.load_state_dict(checkpoint['opt_predictor'])
-        # self.predictor.load_state_dict(checkpoint['predictor'])
+        self.predictor_epoch = checkpoint['predictor_epoch'] + 1
+        self.predictor_loss = checkpoint['predictor_loss']
+        self.opt_predictor.load_state_dict(checkpoint['opt_predictor'])
+        msg = self.predictor.load_state_dict(checkpoint['predictor'], strict=False)
+        self.logger.info(msg)
         self.logger.info('load checkpoint from %s' % model_path)
 
     @torch.no_grad()
@@ -276,7 +277,7 @@ class RunManager:
                             f'mem {memory_used:.0f}MB'
                     self.logger.info(batch_log)
 
-            if self.model_epoch + 1 == self.config.model_epochs and self.vae_warmup:
+            if self.model_epoch + 1 >= int(0.2 * self.config.model_epochs) and self.vae_warmup:
                 self.vae_warmup = False
                 self.model_epoch = -1
 
@@ -284,9 +285,6 @@ class RunManager:
                 val_loss = self.validate_model()
                 self.model_loss, is_best = min(self.model_loss, val_loss), val_loss < self.model_loss
                 self.save_checkpoint(is_best)
-            
-            if self.model_epoch == -1:
-                exit()
 
             self.model_epoch += 1
         self.logger.info('Model Training Complete')
