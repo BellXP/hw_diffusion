@@ -103,9 +103,12 @@ class Diffusion(nn.Module):
 
         if vae_recon:
             x_recon = self.vae_decode(x, condition)
+            x_recon = x_recon.clamp(0, 1)
+            x_recon = torch.mul(x_recon, self.data_scale)
+            x_recon = torch.round(x_recon)
         else:
             x_recon = self.p_sample(x_t, t, condition)
-            x_recon = torch.div(x_recon, self.data_scale)
+        x_recon = torch.div(x_recon, self.data_scale)
         recon_loss = self.loss_fn(x_recon, x_ori)
 
         return model_loss, recon_loss

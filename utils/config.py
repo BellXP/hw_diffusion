@@ -16,7 +16,7 @@ _C.pred_loss = 'smoothl1' # mse, l1, smoothl1
 
 # optimizer
 _C.opt_name = 'Adam' # SGD, Adam
-_C.base_lr = 1e-2 # 1e-2 for predictor and 1e-3 for model
+_C.base_lr = 1e-2
 _C.min_lr = 0
 _C.weight_decay = 1e-7
 _C.momentum = 0.9
