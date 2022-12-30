@@ -20,8 +20,6 @@ class LCPManager:
 
         self.model = self.run_manager.model
         self.predictor = self.run_manager.predictor
-        self.model.eval()
-        self.predictor.eval()
         self.predictor_criterion = get_criterion(config.pred_loss)
     
         ckpt = pickle.load(open('/nvme/xupeng/workplace/dataset/linear_try/linear_try_data.pkl', 'rb'))
@@ -36,11 +34,11 @@ class LCPManager:
         latent_code.requires_grad = True
         l_pred, e_pred = self.predictor(latent_code, condition_code)
         if 'latency' in target:
-            l_target = l_pred.clone().detach() - self.config.prop_step
+            l_target = l_pred - 1e3
             l_loss = self.predictor_criterion(l_pred, l_target)
             l_latent_code_grad = torch.autograd.grad(l_loss, latent_code, retain_graph=True)[0]
         if 'energy' in target:
-            e_target = e_pred.clone().detach() - self.config.prop_step
+            e_target = e_pred - 1e3
             e_loss = self.predictor_criterion(e_pred, e_target)
             e_latent_code_grad = torch.autograd.grad(e_loss, latent_code, retain_graph=True)[0]
         latent_code_grad = l_latent_code_grad + e_latent_code_grad
@@ -79,7 +77,9 @@ class LCPManager:
         for _ in range(self.config.prop_epoch):
             latent_code_grads = self.get_latent_code_grad(target, latent_codes, condition_codes)
             latent_codes = latent_codes - latent_code_grads * self.config.prop_lr
-            latent_codes = latent_codes.clamp(-1, 1).clone().detach()
+            latent_codes = latent_codes.clone().detach()
+            print(latent_code_grads.max(), ' ', latent_code_grads.min())
+            print(latent_codes.max(), ' ', latent_codes.min())
 
         ini_energy, ini_runtime, ini_feasible_check = self.get_real_perf(ini_latent_codes, condition_codes)
         print(f'Ini perf: energy {ini_energy}, runtime {ini_runtime}, feasible {ini_feasible_check}')

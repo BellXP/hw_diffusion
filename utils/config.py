@@ -15,12 +15,9 @@ _C.pred_use_norm = True
 _C.pred_loss = 'smoothl1' # mse, l1, smoothl1
 
 # optimizer
-_C.opt_name = 'Adam' # SGD, Adam
-_C.base_lr = 1e-2
-_C.min_lr = 0
-_C.weight_decay = 1e-7
-_C.momentum = 0.9
-_C.nesterov = True
+_C.opt_name = 'AdamW'
+_C.base_lr = 1e-4
+_C.min_lr = 1e-6
 
 # train settings
 _C.print_freq = 100
@@ -28,9 +25,8 @@ _C.save_freq = 1
 _C.warmup_epochs = 5
 
 # prop settings
-_C.prop_epoch = 100
-_C.prop_step = 10
-_C.prop_lr = 1
+_C.prop_epoch = 10
+_C.prop_lr = 1e-2
 
 
 def _update_config_from_file(config, cfg_file):

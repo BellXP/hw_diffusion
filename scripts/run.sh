@@ -3,7 +3,7 @@
 cd /nvme/xupeng/workplace/hw_diffusion
 pwd
 
-JOB_NAME=hw_diffusion
+JOB_NAME=hw_diffusion_step100
 NOW="`date +%Y%m%d%H%M%S`"
 output_dir='/nvme/xupeng/workplace/exp_dir'
 log_dir='/nvme/xupeng/workplace/logs'

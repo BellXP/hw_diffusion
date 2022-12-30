@@ -15,7 +15,7 @@ def beta_schedule(linear_start=0.00085, linear_end=0.0120, n_timestep=1000):
 class Diffusion(nn.Module):
     def __init__(self, model, data_scale: list=[1], vae=None, vae_emb_channel=None, loss_type='mse'):
         super().__init__()
-        self.noise_schedule = NoiseScheduleVP(betas=beta_schedule())
+        self.noise_schedule = NoiseScheduleVP(betas=beta_schedule(n_timestep=100))
         self.model = model
         self.vae = vae
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -54,11 +54,16 @@ class Diffusion(nn.Module):
     
     def vae_encode(self, x, condition=None):
         if self.vae is None:
-            return x
+            return x, 0
         if condition is not None and self.vae_emb is not None:
             condition = self.vae_emb(condition)
+        moments = self.vae.encode_moments(x, condition)
+        x = self.vae.sample(moments)
 
-        return self.vae.encode(x, condition)
+        mean, logvar = torch.chunk(moments, 2, dim=1)
+        kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mean ** 2 - logvar.exp(), dim = 1))
+
+        return x, kld_loss
     
     def vae_decode(self, x, condition=None):
         if self.vae is None:
@@ -74,7 +79,7 @@ class Diffusion(nn.Module):
         x = torch.div(x, self.data_scale)
         if condition is not None and self.vae_emb is not None:
             condition = self.vae_emb(condition)
-        x = self.vae_encode(x, condition)
+        x, kld_loss = self.vae_encode(x, condition)
 
         return self.add_noise(x, t)
     
@@ -93,7 +98,7 @@ class Diffusion(nn.Module):
     def forward(self, x, condition=None, vae_recon=False):
         x = torch.div(x, self.data_scale)
         x_ori = x.clone()
-        x = self.vae_encode(x, condition)
+        x, kld_loss = self.vae_encode(x, condition)
         t = self.sample_timesteps(x.size(0)).to(self.device)
         x_t, noise = self.add_noise(x, t)
 
@@ -107,4 +112,4 @@ class Diffusion(nn.Module):
             x_recon = torch.div(x_recon, self.data_scale)
         recon_loss = self.loss_fn(x_recon, x_ori)
 
-        return model_loss, recon_loss
+        return model_loss, recon_loss, kld_loss

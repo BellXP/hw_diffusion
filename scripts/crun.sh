@@ -9,7 +9,7 @@ output_dir='/nvme/xupeng/workplace/exp_dir'
 log_dir='/nvme/xupeng/workplace/logs'
 PYTHON=/nvme/xupeng/miniconda3/envs/bell/bin/python
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=5
 
 # --use-checkpoint
 # --use-vae

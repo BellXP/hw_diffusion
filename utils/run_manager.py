@@ -69,6 +69,7 @@ class RunManager:
         data_scale = [10, 20, 30, 40] * 5
         self.model = Diffusion(unet, data_scale=data_scale, vae=vae if config.use_vae else None, vae_emb_channel=32).to(self.device)
         self.opt_model = self.build_optimizer(self.model.parameters())
+        self.kld_weight = 1.0
 
         # get predictor
         self.predictor = build_predictor(config).to(self.device)
@@ -84,19 +85,10 @@ class RunManager:
             self.load_checkpoint(load_best)
 
     def build_optimizer(self, params):
-        if self.config.opt_name == 'SGD':
-            optimizer = torch.optim.SGD(
+        if self.config.opt_name == 'AdamW':
+            optimizer = torch.optim.AdamW(
                 params,
-                lr=self.config.base_lr,
-                momentum=self.config.momentum,
-                nesterov=self.config.nesterov,
-                weight_decay=self.config.weight_decay
-            )
-        elif self.config.opt_name == 'Adam':
-            optimizer = torch.optim.Adam(
-                params,
-                lr=self.config.base_lr,
-                weight_decay=self.config.weight_decay
+                lr=self.config.base_lr
             )
         else:
             raise ValueError('Invalid type of Optimizer')
@@ -105,11 +97,14 @@ class RunManager:
 
     def _calc_learning_rate(self, epoch, idx):
         if epoch < self.config.warmup_epochs:
-            lr = self.config.base_lr * (epoch + 1) / self.config.warmup_epochs
+            lr = self.config.min_lr + (self.config.base_lr - self.config.min_lr) * (epoch * self._num_steps + idx) / (self.config.warmup_epochs * self._num_steps)
         else:
             T_max = self._num_steps * (self._num_epochs - self.config.warmup_epochs)
             T_cur = self._num_steps * (epoch - self.config.warmup_epochs) + idx
-            lr = self.config.min_lr + 0.5 * (self.config.base_lr - self.config.min_lr) * (1 + cos(pi * T_cur / T_max))
+            # cosine schedule
+            # lr = self.config.min_lr + 0.5 * (self.config.base_lr - self.config.min_lr) * (1 + cos(pi * T_cur / T_max))
+            # linear schedule
+            lr = self.config.min_lr + (self.config.base_lr - self.config.min_lr) * (1 - T_cur / T_max)
             
         return lr
 
@@ -181,8 +176,9 @@ class RunManager:
     def validate_model(self, sample_num=1000):
         self.model.eval()
         num_steps = len(self.val_dataloader)
-        recon_loss_meter = AverageMeter()
         model_loss_meter = AverageMeter()
+        recon_loss_meter = AverageMeter()
+        kld_loss_meter = AverageMeter()
         acc_meter = AverageMeter()
         fid_meter = AverageMeter()
 
@@ -197,7 +193,7 @@ class RunManager:
                 x_cond = None
 
             arch_code = arch_code.unsqueeze(dim=1)
-            model_loss, recon_loss = self.model(arch_code, condition=x_cond, vae_recon=self.vae_warmup)
+            model_loss, recon_loss, kld_loss = self.model(arch_code, condition=x_cond, vae_recon=self.vae_warmup)
 
             arch_codes, _ = self.random_gen_arch_codes(sample_num)
             correct_num = sum([int(satisfy_arch_constraint(arch_code)) for arch_code in arch_codes])
@@ -213,21 +209,23 @@ class RunManager:
 
             fid_meter.update(fid_score)
             acc_meter.update(acc)
-            recon_loss_meter.update(recon_loss.item(), arch_code.size(0))
             model_loss_meter.update(model_loss.item(), arch_code.size(0))
+            recon_loss_meter.update(recon_loss.item(), arch_code.size(0))
+            kld_loss_meter.update(kld_loss.item(), arch_code.size(0))
         
             if idx % self.config.print_freq == 0 or idx + 1 == num_steps:
                 memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
                 model_name = 'VAE' if self.vae_warmup else 'Diffusion'
                 batch_log = f'{model_name} Valid: [{self.model_epoch + 1}/{self.config.model_epochs}][{idx}/{num_steps}]\t' \
-                        f'recon loss {recon_loss_meter.val:.4f} ({recon_loss_meter.avg:.4f})\t' \
                         f'model loss {model_loss_meter.val:.4f} ({model_loss_meter.avg:.4f})\t' \
+                        f'recon loss {recon_loss_meter.val:.4f} ({recon_loss_meter.avg:.4f})\t' \
+                        f'kld loss {kld_loss_meter.val:.4f} ({kld_loss_meter.avg:.4f})\t' \
                         f'acc {acc_meter.val:.4f} ({acc_meter.avg:.4f})\t' \
                         f'FID {fid_meter.val:.4f} ({fid_meter.avg:.4f})\t' \
                         f'mem {memory_used:.0f}MB'
                 self.logger.info(batch_log)
         
-        return model_loss_meter.avg + recon_loss_meter.avg
+        return model_loss_meter.avg + recon_loss_meter.avg + self.kld_weight * kld_loss_meter.avg
 
     def train_model(self):
         self.model.train()
@@ -238,8 +236,9 @@ class RunManager:
 
         while self.model_epoch < self.config.model_epochs:
             batch_time = AverageMeter()
-            recon_loss_meter = AverageMeter()
             model_loss_meter = AverageMeter()
+            recon_loss_meter = AverageMeter()
+            kld_loss_meter = AverageMeter()
             end = time.time()
 
             for idx, [arch_code, illegal_arch_code] in enumerate(self.train_dataloader):
@@ -254,15 +253,17 @@ class RunManager:
                     x_cond = None
 
                 arch_code = arch_code.unsqueeze(dim=1)
-                model_loss, recon_loss = self.model(arch_code, condition=x_cond, vae_recon=self.vae_warmup)
-                loss = recon_loss if self.vae_warmup else (model_loss + recon_loss)
+                model_loss, recon_loss, kld_loss = self.model(arch_code, condition=x_cond, vae_recon=self.vae_warmup)
+                vae_loss = recon_loss + self.kld_weight * kld_loss
+                loss = vae_loss if self.vae_warmup else (model_loss + vae_loss)
 
                 self.opt_model.zero_grad()
                 loss.backward()
                 self.opt_model.step()
 
-                recon_loss_meter.update(recon_loss.item(), arch_code.size(0))
                 model_loss_meter.update(model_loss.item(), arch_code.size(0))
+                recon_loss_meter.update(recon_loss.item(), arch_code.size(0))
+                kld_loss_meter.update(kld_loss.item(), arch_code.size(0))
                 batch_time.update(time.time() - end)
                 end = time.time()
 
@@ -272,8 +273,9 @@ class RunManager:
                     model_name = 'VAE' if self.vae_warmup else 'Diffusion'
                     batch_log = f'{model_name} Train: [{self.model_epoch + 1}/{self.config.model_epochs}][{idx}/{num_steps}]\t' \
                             f'eta {timedelta(seconds=int(etas))}\t' \
-                            f'recon loss {recon_loss_meter.val:.4f} ({recon_loss_meter.avg:.4f})\t' \
                             f'model loss {model_loss_meter.val:.4f} ({model_loss_meter.avg:.4f})\t' \
+                            f'recon loss {recon_loss_meter.val:.4f} ({recon_loss_meter.avg:.4f})\t' \
+                            f'kld loss {kld_loss_meter.val:.4f} ({kld_loss_meter.avg:.4f})\t' \
                             f'mem {memory_used:.0f}MB'
                     self.logger.info(batch_log)
 
