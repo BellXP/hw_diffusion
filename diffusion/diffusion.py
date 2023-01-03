@@ -15,7 +15,7 @@ def beta_schedule(linear_start=0.00085, linear_end=0.0120, n_timestep=1000):
 class Diffusion(nn.Module):
     def __init__(self, model, data_scale: list=[1], vae=None, vae_emb_channel=None, loss_type='mse'):
         super().__init__()
-        self.noise_schedule = NoiseScheduleVP(betas=beta_schedule(n_timestep=100))
+        self.noise_schedule = NoiseScheduleVP(betas=beta_schedule(n_timestep=200))
         self.model = model
         self.vae = vae
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
