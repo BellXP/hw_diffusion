@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import copy
 from .scheduler import NoiseScheduleVP
 from .wrapper import model_wrapper
 from .solver import DPM_Solver
@@ -27,6 +28,8 @@ class Diffusion(nn.Module):
             self.vae_emb = nn.Embedding(2, vae_emb_channel).to(self.device)
         else:
             self.vae_emb = None
+            
+        self.q_model = copy.deepcopy(model)
 
     def prepare_loss_fn(self, loss_type):
         if loss_type == 'l1':
@@ -104,6 +107,11 @@ class Diffusion(nn.Module):
 
         model_out = self.model(x_t, t, condition)
         model_loss = self.loss_fn(model_out, noise)
+        
+        q_model_out = self.q_model(x, t, condition)
+        q_model_loss = self.loss_fn(q_model_out, noise)
+        
+        model_loss = model_loss + q_model_loss
 
         if vae_recon:
             x_recon = self.vae_decode(x, condition)
