@@ -51,9 +51,9 @@ class Diffusion(nn.Module):
         sigma_t = sigma_t[(...,) + (None,)*(x.dim() - 1)]
         if noise is None:
             noise = torch.randn_like(x).to(self.device)
-        x = x * alpha_t + sigma_t * noise
+        x_t = x * alpha_t + sigma_t * noise
 
-        return x, noise
+        return x_t, noise
     
     def vae_encode(self, x, condition=None):
         if self.vae is None:
@@ -76,15 +76,25 @@ class Diffusion(nn.Module):
             
         return self.vae.decode(x, condition)
 
-    def q_sample(self, x, t=None, condition=None):
+    def q_sample(self, x, t=None, condition=None, use_q_model=False):
         if t is None:
             t = torch.tensor([self.noise_steps - 1] * x.size(0)).long().to(self.device)
         x = torch.div(x, self.data_scale)
         if condition is not None and self.vae_emb is not None:
             condition = self.vae_emb(condition)
         x, kld_loss = self.vae_encode(x, condition)
-
-        return self.add_noise(x, t)
+        
+        if use_q_model:
+            alpha_t = self.noise_schedule.marginal_alpha(t)
+            sigma_t = self.noise_schedule.marginal_std(t)
+            alpha_t = alpha_t[(...,) + (None,)*(x.dim() - 1)]
+            sigma_t = sigma_t[(...,) + (None,)*(x.dim() - 1)]
+            x_t = self.q_model(x, t, condition)
+            noise = torch.div(x_t - x * alpha_t, sigma_t)
+        else:
+            x_t, noise = self.add_noise(x, t)
+        
+        return x_t, noise
     
     def p_sample(self, x, t=None, condition=None):
         model_fn = model_wrapper(self.model, self.noise_schedule, condition=condition)
@@ -109,15 +119,15 @@ class Diffusion(nn.Module):
         model_loss = self.loss_fn(model_out, noise)
         
         q_model_out = self.q_model(x, t, condition)
-        q_model_loss = self.loss_fn(q_model_out, noise)
+        q_model_loss = self.loss_fn(q_model_out, x_t)
         
         model_loss = model_loss + q_model_loss
-
+        
         if vae_recon:
             x_recon = self.vae_decode(x, condition)
         else:
             x_recon = self.p_sample(x_t, t, condition)
             x_recon = torch.div(x_recon, self.data_scale)
         recon_loss = self.loss_fn(x_recon, x_ori)
-
+        
         return model_loss, recon_loss, kld_loss
